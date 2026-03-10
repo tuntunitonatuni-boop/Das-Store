@@ -1,0 +1,29 @@
+# Block access to configuration and database files
+<Files "config.php">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Disable directory listing
+Options -Indexes
+
+# Security Headers
+Header set X-XSS-Protection "1; mode=block"
+Header set X-Content-Type-Options "nosniff"
+Header set X-Frame-Options "SAMEORIGIN"
+Header set Referrer-Policy "no-referrer-when-downgrade"
+
+# Fast PHP Settings (If allowed)
+<IfModule mod_php7.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 12M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+</IfModule>
+
+# Handle PHP extensions (optional Pretty URLs)
+# If you want to use /dashboard instead of dashboard.php
+# RewriteEngine On
+# RewriteCond %{REQUEST_FILENAME} !-d
+# RewriteCond %{REQUEST_FILENAME}\.php -f
+# RewriteRule ^([^\.]+)$ $1.php [NC,L]

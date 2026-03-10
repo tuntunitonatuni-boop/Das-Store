@@ -1,0 +1,14 @@
+vendor/
+node_modules/
+.env
+uploads/
+.VSCode/
+build/
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+/android/app/build
+/ios/Flutter/App.framework
+/ios/Flutter/Flutter.framework
+/build/
