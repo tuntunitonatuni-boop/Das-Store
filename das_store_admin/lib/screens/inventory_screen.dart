@@ -96,8 +96,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   itemCount: _products.length,
                   itemBuilder: (ctx, i) {
                     final p = _products[i];
-                    final dQty = int.tryParse(p['display_qty'].toString()) ?? 0;
-                    final wQty = int.tryParse(p['warehouse_qty'].toString()) ?? 0;
+                    final dQty = (double.tryParse(p['display_qty'].toString()) ?? 0.0).toInt();
+                    final wQty = (double.tryParse(p['warehouse_qty'].toString()) ?? 0.0).toInt();
                     final total = dQty + wQty;
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),

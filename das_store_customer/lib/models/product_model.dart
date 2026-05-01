@@ -52,7 +52,7 @@ class ProductModel {
       imageUrl: json['image_url'],
       categoryName: json['category_name'],
       companyName: json['company_name'],
-      stock: int.tryParse(json['stock'].toString()) ?? 0,
+      stock: (double.tryParse(json['stock'].toString()) ?? 0.0).toInt(),
       categoryId: int.tryParse(json['category_id'].toString()) ?? 0,
       barcode: json['barcode'],
       isLoose: int.tryParse(json['is_loose'].toString()) ?? 0,

@@ -41,10 +41,10 @@ class _LowStockScreenState extends State<LowStockScreen> {
                     itemCount: _products.length,
                     itemBuilder: (ctx, i) {
                       final p = _products[i];
-                      final display = int.tryParse(p['display_qty'].toString()) ?? 0;
-                      final warehouse = int.tryParse(p['warehouse_qty'].toString()) ?? 0;
+                      final display = (double.tryParse(p['display_qty'].toString()) ?? 0.0).toInt();
+                      final warehouse = (double.tryParse(p['warehouse_qty'].toString()) ?? 0.0).toInt();
                       final total = display + warehouse;
-                      final reorder = int.tryParse(p['reorder_level'].toString()) ?? 0;
+                      final reorder = (double.tryParse(p['reorder_level'].toString()) ?? 0.0).toInt();
                       final isZero = total <= 0;
 
                       return Container(

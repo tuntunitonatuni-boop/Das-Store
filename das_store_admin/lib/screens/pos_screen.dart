@@ -138,7 +138,7 @@ class _PosScreenState extends State<PosScreen> {
                 itemCount: _products.length,
                 itemBuilder: (ctx, i) {
                   final p = _products[i];
-                  final stock = int.tryParse(p['total_qty'].toString()) ?? 0;
+                  final stock = (double.tryParse(p['total_qty'].toString()) ?? 0.0).toInt();
                   return InkWell(
                     onTap: stock > 0 ? () => _addToCart(p) : null,
                     child: Container(
