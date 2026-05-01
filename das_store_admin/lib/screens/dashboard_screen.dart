@@ -196,9 +196,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                       child: Row(children: [
-                        Expanded(child: _MiniStat(icon: Icons.inventory_2_rounded, label: 'পণ্য', value: '${_data?['total_products'] ?? 0}', color: AppConstants.accentColor)),
+                        Expanded(child: _MiniStat(icon: Icons.inventory_2_rounded, label: 'পণ্য', value: '${_data?['total_products'] ?? 0}', color: AppConstants.accentColor, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const InventoryScreen())))),
                         const SizedBox(width: 12),
-                        Expanded(child: _MiniStat(icon: Icons.people_rounded, label: 'কাস্টমার', value: '${_data?['total_customers'] ?? 0}', color: AppConstants.successColor)),
+                        Expanded(child: _MiniStat(icon: Icons.people_rounded, label: 'কাস্টমার', value: '${_data?['total_customers'] ?? 0}', color: AppConstants.successColor, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomerLedgerScreen())))),
                       ]),
                     ),
                   ),
@@ -359,24 +359,27 @@ class _StatCard extends StatelessWidget {
 }
 
 class _MiniStat extends StatelessWidget {
-  final IconData icon; final String label, value; final Color color;
-  const _MiniStat({required this.icon, required this.label, required this.value, required this.color});
+  final IconData icon; final String label, value; final Color color; final VoidCallback? onTap;
+  const _MiniStat({required this.icon, required this.label, required this.value, required this.color, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)]),
-      child: Row(children: [
-        Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-          child: Icon(icon, color: color, size: 20)),
-        const SizedBox(width: 12),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: color)),
-          Text(label, style: const TextStyle(fontSize: 12, color: AppConstants.textLightColor)),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)]),
+        child: Row(children: [
+          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, color: color, size: 20)),
+          const SizedBox(width: 12),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: color)),
+            Text(label, style: const TextStyle(fontSize: 12, color: AppConstants.textLightColor)),
+          ]),
         ]),
-      ]),
+      ),
     );
   }
 }
