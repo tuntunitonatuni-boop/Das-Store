@@ -174,7 +174,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           icon: Icons.pending_actions_rounded, title: 'পেন্ডিং অর্ডার',
                           value: '${_data?['pending_orders'] ?? 0}',
                           color: AppConstants.warningColor, subtitle: 'অনলাইন অর্ডার',
-                          onTap: () => setState(() => _currentIndex = 1),
+                          onTap: () => setState(() => _currentIndex = 2),
                         ),
                         _StatCard(
                           icon: Icons.warning_amber_rounded, title: 'স্টক কম',
