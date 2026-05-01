@@ -17,6 +17,10 @@ $monthSales  = $pdo->query("SELECT COALESCE(SUM(total),0) as total FROM sales WH
 $totalProducts = $pdo->query("SELECT COUNT(*) as c FROM products WHERE is_active=1")->fetchColumn();
 $lowStockCount = $pdo->query("SELECT COUNT(*) as c FROM inventory i JOIN products p ON p.id=i.product_id WHERE (i.display_qty+i.warehouse_qty) <= i.reorder_level AND p.is_active=1")->fetchColumn();
 $totalCredit   = $pdo->query("SELECT COALESCE(SUM(balance),0) as b FROM customers WHERE balance > 0")->fetchColumn();
+$totalSupplierDebt = $pdo->query("SELECT COALESCE(SUM(balance),0) as b FROM dealers WHERE balance > 0")->fetchColumn();
+$todayExpenses     = $pdo->prepare("SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE expense_date = ?");
+$todayExpenses->execute([$today]);
+$todayExpenses = $todayExpenses->fetchColumn();
 $expiryCount = $pdo->query("
     SELECT (
         SELECT COUNT(*) FROM product_batches WHERE expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ".EXPIRY_WARN_DAYS." DAY) AND qty > 0
@@ -62,42 +66,40 @@ require_once 'includes/sidebar.php';
 </div>
 
 <!-- Stat Cards -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-    <div class="stat-card dark:bg-gray-800 dark:border-gray-700">
-        <div class="flex items-center justify-between mb-2">
-            <span class="text-sm font-medium text-gray-500 dark:text-gray-400"><?= __('today_sales') ?></span>
-            <span class="text-2xl">💰</span>
-        </div>
-        <div class="text-2xl font-bold text-gray-900 dark:text-gray-100"><?= CURRENCY . number_format($todaySales['total'], 2) ?></div>
-        <div class="text-xs text-gray-400 mt-1"><?= $todaySales['count'] ?> <?= __('transactions') ?></div>
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+    <div class="stat-card dark:bg-gray-800 dark:border-gray-700 p-4 border-t-4 border-emerald-500">
+        <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2"><?= __('today_sales') ?></div>
+        <div class="text-xl font-bold text-gray-900 dark:text-gray-100"><?= CURRENCY . number_format($todaySales['total'], 2) ?></div>
+        <div class="text-[10px] text-gray-400 mt-1"><?= $todaySales['count'] ?> trans.</div>
     </div>
-    <div class="stat-card dark:bg-gray-800 dark:border-gray-700">
-        <div class="flex items-center justify-between mb-2">
-            <span class="text-sm font-medium text-gray-500 dark:text-gray-400"><?= __('this_month') ?></span>
-            <span class="text-2xl">📅</span>
-        </div>
-        <div class="text-2xl font-bold text-gray-900 dark:text-gray-100"><?= CURRENCY . number_format($monthSales['total'], 2) ?></div>
-        <div class="text-xs text-gray-400 mt-1"><?= date('F Y') ?></div>
+    <div class="stat-card dark:bg-gray-800 dark:border-gray-700 p-4 border-t-4 border-red-500">
+        <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2"><?= __('expenses') ?> (Today)</div>
+        <div class="text-xl font-bold text-red-600 dark:text-red-500"><?= CURRENCY . number_format($todayExpenses, 2) ?></div>
+        <div class="text-[10px] text-gray-400 mt-1"><?= __('today') ?></div>
     </div>
-    <div class="stat-card dark:bg-gray-800 dark:border-gray-700">
-        <div class="flex items-center justify-between mb-2">
-            <span class="text-sm font-medium text-gray-500 dark:text-gray-400"><?= __('total_credit') ?></span>
-            <span class="text-2xl">📒</span>
-        </div>
-        <div class="text-2xl font-bold text-red-600"><?= CURRENCY . number_format($totalCredit, 2) ?></div>
-        <div class="text-xs text-gray-400 mt-1"><?= __('outstanding_receivables') ?></div>
+    <div class="stat-card dark:bg-gray-800 dark:border-gray-700 p-4 border-t-4 border-blue-500">
+        <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2"><?= __('total_credit') ?></div>
+        <div class="text-xl font-bold text-blue-600 dark:text-blue-500"><?= CURRENCY . number_format($totalCredit, 2) ?></div>
+        <div class="text-[10px] text-gray-400 mt-1"><?= __('customer_ledger') ?></div>
     </div>
-    <div class="stat-card dark:bg-gray-800 dark:border-gray-700">
-        <div class="flex items-center justify-between mb-2">
-            <span class="text-sm font-medium text-gray-500 dark:text-gray-400"><?= __('products_active') ?></span>
-            <span class="text-2xl">📦</span>
-        </div>
-        <div class="text-2xl font-bold text-gray-900 dark:text-gray-100"><?= $totalProducts ?></div>
-        <div class="text-xs mt-1">
+    <div class="stat-card dark:bg-gray-800 dark:border-gray-700 p-4 border-t-4 border-orange-500">
+        <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2"><?= __('supplier_ledger') ?></div>
+        <div class="text-xl font-bold text-orange-600 dark:text-orange-500"><?= CURRENCY . number_format($totalSupplierDebt, 2) ?></div>
+        <div class="text-[10px] text-gray-400 mt-1"><?= __('outstanding_balance') ?></div>
+    </div>
+    <div class="stat-card dark:bg-gray-800 dark:border-gray-700 p-4 border-t-4 border-brand-500">
+        <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2"><?= __('this_month') ?></div>
+        <div class="text-xl font-bold text-gray-900 dark:text-gray-100"><?= CURRENCY . number_format($monthSales['total'], 2) ?></div>
+        <div class="text-[10px] text-gray-400 mt-1"><?= date('F Y') ?></div>
+    </div>
+    <div class="stat-card dark:bg-gray-800 dark:border-gray-700 p-4">
+        <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2"><?= __('products_active') ?></div>
+        <div class="text-xl font-bold text-gray-900 dark:text-gray-100"><?= $totalProducts ?></div>
+        <div class="text-[10px] mt-1">
             <?php if ($lowStockCount > 0): ?>
-            <span class="text-amber-600 font-medium">⚠ <?= $lowStockCount ?> <?= __('low_stock_warning') ?></span>
+            <span class="text-amber-600 font-bold">⚠ <?= $lowStockCount ?> LOW</span>
             <?php else: ?>
-            <span class="text-emerald-600">✓ <?= __('all_stocked') ?></span>
+            <span class="text-emerald-600">✓ OK</span>
             <?php endif; ?>
         </div>
     </div>

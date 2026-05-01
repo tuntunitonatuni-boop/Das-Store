@@ -56,14 +56,16 @@ if ($action === 'products') {
         LEFT JOIN inventory i ON i.product_id=p.id
         $where
         ORDER BY p.id DESC
-        LIMIT $offset, $limit
+        LIMIT $limit OFFSET $offset
     ");
     $stmt->execute($params);
     $products = $stmt->fetchAll();
 
-    // Map images to full URLs
+    // Map images to full URLs and ceil prices
     foreach ($products as &$p) {
-        $p['image_url'] = $p['image'] ? (BASE_URL . 'uploads/products/' . $p['image']) : null;
+        $p['image_url']  = $p['image'] ? (BASE_URL . 'uploads/products/' . $p['image']) : null;
+        $p['sale_price'] = price_ceil((float)$p['sale_price']);
+        $p['mrp']        = price_ceil((float)$p['mrp']);
     }
 
     echo json_encode(['success' => true, 'products' => $products]);
@@ -77,7 +79,9 @@ if ($action === 'product_detail') {
     $stmt->execute([$id]);
     $p = $stmt->fetch();
     if ($p) {
-        $p['image_url'] = $p['image'] ? (BASE_URL . 'uploads/products/' . $p['image']) : null;
+        $p['image_url']  = $p['image'] ? (BASE_URL . 'uploads/products/' . $p['image']) : null;
+        $p['sale_price'] = price_ceil((float)$p['sale_price']);
+        $p['mrp']        = price_ceil((float)$p['mrp']);
         echo json_encode(['success' => true, 'product' => $p]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Product not found']);
@@ -145,4 +149,91 @@ if ($action === 'my_orders') {
     echo json_encode(['success' => true, 'orders' => $orders]);
     exit;
 }
+
+// 6. Order Detail (for customer)
+if ($action === 'order_detail') {
+    $customer = get_auth_customer($pdo);
+    $id = (int)($_GET['id'] ?? 0);
+    if (!$id) { echo json_encode(['success' => false, 'message' => 'Invalid order']); exit; }
+
+    $where = "WHERE s.id = ?";
+    $params = [$id];
+    // If customer is logged in, ensure they can only see their own orders
+    if ($customer) {
+        $where .= " AND s.customer_id = ?";
+        $params[] = $customer['id'];
+    }
+
+    $stmt = $pdo->prepare("SELECT s.* FROM sales s $where LIMIT 1");
+    $stmt->execute($params);
+    $order = $stmt->fetch();
+
+    if (!$order) { echo json_encode(['success' => false, 'message' => 'Order not found']); exit; }
+
+    $items = $pdo->prepare("SELECT si.*, si.product_name, si.unit_price, si.qty, si.subtotal FROM sale_items si WHERE si.sale_id = ?");
+    $items->execute([$id]);
+    $order['items'] = $items->fetchAll();
+
+    echo json_encode(['success' => true, 'order' => $order]);
+    exit;
+}
+
+// 7. Validate Coupon
+if ($action === 'validate_coupon' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    $code = strtoupper(trim($input['code'] ?? ''));
+    $cartTotal = (float)($input['cart_total'] ?? 0);
+
+    if (!$code) {
+        echo json_encode(['success' => false, 'message' => 'কুপন কোড দিন']);
+        exit;
+    }
+
+    $stmt = $pdo->prepare("SELECT * FROM coupons WHERE code = ? AND is_active = 1 LIMIT 1");
+    $stmt->execute([$code]);
+    $coupon = $stmt->fetch();
+
+    if (!$coupon) {
+        echo json_encode(['success' => false, 'message' => 'অবৈধ বা মেয়াদোত্তীর্ণ কুপন কোড']);
+        exit;
+    }
+
+    // Check expiry
+    if ($coupon['valid_until'] && strtotime($coupon['valid_until']) < time()) {
+        echo json_encode(['success' => false, 'message' => 'এই কুপনের মেয়াদ শেষ হয়ে গেছে']);
+        exit;
+    }
+
+    // Check min order amount
+    $minOrder = (float)($coupon['min_order_amount'] ?? 0);
+    if ($minOrder > 0 && $cartTotal < $minOrder) {
+        echo json_encode(['success' => false, 'message' => "কমপক্ষে ৳{$minOrder} এর অর্ডারে এই কুপন ব্যবহার করা যাবে"]);
+        exit;
+    }
+
+    // Calculate discount
+    $discount = 0;
+    if ($coupon['discount_type'] === 'percent') {
+        $discount = $cartTotal * ($coupon['discount_value'] / 100);
+        $maxDiscount = (float)($coupon['max_discount'] ?? 0);
+        if ($maxDiscount > 0 && $discount > $maxDiscount) {
+            $discount = $maxDiscount;
+        }
+    } else {
+        $discount = (float)$coupon['discount_value'];
+    }
+
+    // Round up discount
+    $discount = min($discount, $cartTotal);
+    $discount = ceil($discount);
+
+    echo json_encode([
+        'success' => true,
+        'message' => "৳{$discount} ছাড় পেয়েছেন!",
+        'discount' => $discount,
+        'coupon_code' => $code,
+    ]);
+    exit;
+}
 ?>
+

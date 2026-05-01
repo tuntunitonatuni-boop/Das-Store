@@ -1,19 +1,32 @@
 # Block access to configuration and database files
 <Files "config.php">
-    Order allow,deny
-    Deny from all
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
 </Files>
 
 # Disable directory listing
 Options -Indexes
 
 # Security Headers
-Header set X-XSS-Protection "1; mode=block"
-Header set X-Content-Type-Options "nosniff"
-Header set X-Frame-Options "SAMEORIGIN"
-Header set Referrer-Policy "no-referrer-when-downgrade"
+<IfModule mod_headers.c>
+    Header set X-XSS-Protection "1; mode=block"
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "no-referrer-when-downgrade"
+</IfModule>
 
 # Fast PHP Settings (If allowed)
+<IfModule mod_php.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 12M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+</IfModule>
 <IfModule mod_php7.c>
     php_value upload_max_filesize 10M
     php_value post_max_size 12M

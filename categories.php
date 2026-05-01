@@ -219,8 +219,6 @@ require_once 'includes/sidebar.php';
     </div>
 </div>
 
-</div>
-
 <script>
 function toggleEmojiPicker() {
     document.getElementById('emoji-picker').classList.toggle('hidden');

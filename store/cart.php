@@ -4,6 +4,7 @@ require_once dirname(__DIR__) . '/config.php';
 require_once dirname(__DIR__) . '/includes/db.php';
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/includes/flash.php';
+require_once dirname(__DIR__) . '/includes/features.php';
 
 if (!isset($_SESSION['cart'])) $_SESSION['cart'] = [];
 
@@ -13,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'add' && $pid) {
         $qty = (float)($_POST['qty'] ?? 1);
-        $stmt = $pdo->prepare("SELECT p.id, p.name, p.sale_price, p.unit, p.image FROM products p WHERE p.id = ? AND p.is_active = 1");
+        $stmt = $pdo->prepare("SELECT p.id, p.name, p.sale_price, p.unit, p.image, p.allow_custom_qty, p.min_order_amount FROM products p WHERE p.id = ? AND p.is_active = 1");
         $stmt->execute([$pid]);
         $product = $stmt->fetch();
 
@@ -22,12 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['cart'][$pid]['qty'] += $qty;
             } else {
                 $_SESSION['cart'][$pid] = [
-                    'id'    => $product['id'],
-                    'name'  => $product['name'],
-                    'price' => (float)$product['sale_price'],
-                    'unit'  => $product['unit'],
-                    'image' => $product['image'],
-                    'qty'   => $qty
+                    'id'           => $product['id'],
+                    'name'         => $product['name'],
+                    'price'        => (float)$product['sale_price'],
+                    'unit'         => $product['unit'],
+                    'image'        => $product['image'],
+                    'allow_custom' => $product['allow_custom_qty'],
+                    'min_order'    => $product['min_order_amount'],
+                    'qty'          => $qty
                 ];
             }
             set_flash('success', "'{$product['name']}' added to cart! 🛒");
@@ -53,11 +56,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         set_flash('success', 'Cart cleared.');
         header('Location: cart.php'); exit;
     }
+
+    if ($action === 'apply_coupon') {
+        $code = trim($_POST['coupon_code'] ?? '');
+        $c = $pdo->prepare("SELECT * FROM coupons WHERE code=?");
+        $c->execute([strtoupper($code)]);
+        $c = $c->fetch();
+        
+        $current_total = 0;
+        foreach ($_SESSION['cart'] as $item) $current_total += $item['price'] * $item['qty'];
+        
+        if (!$c) {
+            set_flash('error', "দুঃখিত, এই কুপন কোডটি সঠিক নয়। (Invalid coupon)");
+        } elseif ($c['is_active'] != 1) {
+            set_flash('error', "এই কুপনটি বর্তমানে বন্ধ আছে। (Coupon is inactive)");
+        } elseif ($c['expires_at'] && strtotime($c['expires_at']) < strtotime(date('Y-m-d'))) {
+            set_flash('error', "এই কুপনের মেয়াদ শেষ হয়ে গেছে। (Coupon expired)");
+        } elseif ($c['usage_limit'] > 0 && $c['used_count'] >= $c['usage_limit']) {
+            set_flash('error', "এই কুপনটির ব্যবহারের সীমা শেষ হয়ে গেছে। (Limit reached)");
+        } elseif ($current_total < ($c['min_order'] ?? 0)) {
+            set_flash('error', "এই কুপনটি ব্যবহার করতে হলে অন্তত ৳" . number_format($c['min_order'], 2) . " এর অর্ডার করতে হবে।");
+        } else {
+            $_SESSION['checkout_coupon'] = $c;
+            set_flash('success', "কুপন সফলভাবে যোগ করা হয়েছে! 🎉");
+        }
+        header('Location: cart.php'); exit;
+    }
+    
+    if ($action === 'remove_coupon') {
+        unset($_SESSION['checkout_coupon']);
+        header('Location: cart.php'); exit;
+    }
 }
 
 $cart_items = $_SESSION['cart'];
-$total = 0;
-foreach ($cart_items as $item) $total += $item['price'] * $item['qty'];
+$subtotal = 0;
+foreach ($cart_items as $item) $subtotal += $item['price'] * $item['qty'];
+
+// Calculate Discounts
+$discount = 0;
+if (isset($_SESSION['checkout_coupon'])) {
+    $c = $_SESSION['checkout_coupon'];
+    if ($c['type'] === 'percent') {
+        $discount = $subtotal * ($c['value'] / 100);
+        if ($c['max_discount'] > 0 && $discount > $c['max_discount']) {
+            $discount = $c['max_discount'];
+        }
+    } else {
+        $discount = $c['value'];
+    }
+    // Re-verify min order in case cart changed
+    if ($subtotal < ($c['min_order'] ?? 0)) {
+        unset($_SESSION['checkout_coupon']);
+        $discount = 0;
+        set_flash('error', "কার্টের পরিমাণ কমে যাওয়ায় কুপনটি বাতিল করা হয়েছে।");
+    }
+}
+
+$total = max(0, $subtotal - $discount);
 
 $store_page_title = 'Your Cart - ' . SHOP_NAME;
 require_once dirname(__DIR__) . '/includes/store-header.php';
@@ -96,22 +152,49 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
                                 </div>
                                 <div class="min-w-0">
                                     <div class="font-bold text-gray-900 dark:text-white group-hover:text-brand-700 dark:group-hover:text-brand-400 transition-colors truncate"><?= htmlspecialchars($item['name']) ?></div>
-                                    <div class="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase"><?= CURRENCY ?><?= number_format($item['price'], 2) ?> / <?= $item['unit'] ?></div>
+                                    <div class="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase"><?= CURRENCY ?><?= fmt_price($item['price']) ?> / <?= $item['unit'] ?></div>
                                 </div>
                             </div>
                         </td>
                         <td class="p-4">
-                            <form action="cart.php" method="post" class="flex items-center justify-center">
+                            <form action="cart.php" method="post" class="flex items-center justify-center gap-1">
                                 <input type="hidden" name="action" value="update">
                                 <input type="hidden" name="product_id" value="<?= $id ?>">
+                                
+                                <?php if (!empty($item['allow_custom'])): ?>
+                                <?php $cart_price = $item['price']; ?>
+                                <div class="flex flex-col items-center gap-1">
+                                    <!-- Qty field -->
+                                    <div class="flex items-center border-2 border-brand-100 dark:border-brand-900 rounded-xl overflow-hidden bg-brand-50 dark:bg-gray-800">
+                                        <input type="number" name="qty" step="0.001"
+                                            min="<?= $item['min_order'] > 0 ? round($item['min_order'] / max(price_ceil($item['price']), 1), 3) : '0.001' ?>"
+                                            value="<?= $item['qty'] ?>"
+                                            id="cart-qty-<?= $id ?>"
+                                            class="w-16 py-1.5 text-center font-bold text-brand-700 dark:text-white outline-none text-xs bg-transparent"
+                                            oninput="cartSyncQty(<?= $id ?>, <?= price_ceil($item['price']) ?>)"
+                                            onchange="this.form.submit()">
+                                        <span class="pr-2 text-[10px] text-gray-400 font-bold"><?= $item['unit'] ?></span>
+                                    </div>
+                                    <!-- Taka display (readonly live calc) -->
+                                    <div class="flex items-center border-2 border-emerald-100 dark:border-emerald-900 rounded-xl overflow-hidden bg-emerald-50 dark:bg-gray-800">
+                                        <span class="pl-2 text-[10px] font-bold text-emerald-500">৳</span>
+                                        <input type="number" step="1"
+                                            id="cart-taka-<?= $id ?>"
+                                            value="<?= price_ceil($item['qty'] * $item['price']) ?>"
+                                            class="w-16 py-1.5 text-center font-bold text-emerald-600 dark:text-white outline-none text-xs bg-transparent"
+                                            oninput="cartSyncTaka(<?= $id ?>, <?= price_ceil($cart_price) ?>)">
+                                    </div>
+                                </div>
+                                <?php else: ?>
                                 <div class="flex items-center border-2 border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800">
                                     <button type="submit" name="qty" value="<?= $item['qty'] - 1 ?>" class="px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 font-bold transition-all">-</button>
                                     <input type="text" readonly value="<?= $item['qty'] ?>" class="w-10 text-center font-bold text-gray-700 dark:text-white outline-none text-xs bg-transparent">
                                     <button type="submit" name="qty" value="<?= $item['qty'] + 1 ?>" class="px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 font-bold transition-all">+</button>
                                 </div>
+                                <?php endif; ?>
                             </form>
                         </td>
-                        <td class="p-4 text-right font-extrabold text-gray-900 dark:text-white text-base"><?= CURRENCY ?><?= number_format($item['price'] * $item['qty'], 2) ?></td>
+                        <td class="p-4 text-right font-extrabold text-gray-900 dark:text-white text-base"><?= CURRENCY ?><?= fmt_price($item['price'] * $item['qty']) ?></td>
                         <td class="p-4 text-center">
                             <form action="cart.php" method="post">
                                 <input type="hidden" name="action" value="remove">
@@ -147,15 +230,40 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
             <div class="space-y-4 mb-8">
                 <div class="flex justify-between items-center text-sm font-medium text-gray-500 dark:text-gray-400">
                     <span><?= __('subtotal') ?></span>
-                    <span class="text-gray-900 dark:text-white"><?= CURRENCY ?><?= number_format($total, 2) ?></span>
+                    <span class="text-gray-900 dark:text-white"><?= CURRENCY ?><?= fmt_price($subtotal) ?></span>
                 </div>
+                
+                <?php if ($discount > 0): ?>
+                <div class="flex justify-between items-center text-sm font-medium text-red-500">
+                    <span>Discount (<?= htmlspecialchars($_SESSION['checkout_coupon']['code']) ?>)
+                        <form action="cart.php" method="post" class="inline ml-1">
+                            <input type="hidden" name="action" value="remove_coupon">
+                            <button type="submit" class="text-red-400 underline">Remove</button>
+                        </form>
+                    </span>
+                    <span>- <?= CURRENCY ?><?= number_format($discount, 2) ?></span>
+                </div>
+                <?php endif; ?>
+
                 <div class="flex justify-between items-center text-sm font-medium text-gray-500 dark:text-gray-400">
                     <span><?= __('delivery_fee') ?></span>
                     <span class="text-emerald-600 dark:text-emerald-400 font-bold uppercase text-[10px]"><?= __('free_delivery') ?></span>
                 </div>
+
+                <!-- Coupons Section in Cart -->
+                <?php if (feature('discount_coupons') && !isset($_SESSION['checkout_coupon'])): ?>
+                <div class="pt-2 pb-1">
+                    <form action="cart.php" method="post" class="flex gap-2">
+                        <input type="hidden" name="action" value="apply_coupon">
+                        <input type="text" name="coupon_code" placeholder="Coupon Code" class="form-control flex-1 py-1.5 px-3 text-sm uppercase dark:bg-gray-700 dark:border-gray-600 dark:text-white rounded-lg border-gray-200" required>
+                        <button type="submit" class="bg-gray-900 hover:bg-gray-800 text-white py-1.5 px-4 text-xs font-bold rounded-lg dark:bg-gray-600">Apply</button>
+                    </form>
+                </div>
+                <?php endif; ?>
+
                 <div class="flex justify-between items-center pt-4 border-t border-dashed border-gray-200 dark:border-gray-700">
                     <span class="text-base font-extrabold text-gray-900 dark:text-white"><?= __('total') ?></span>
-                    <span class="text-2xl font-extrabold text-brand-700 dark:text-brand-400"><?= CURRENCY ?><?= number_format($total, 2) ?></span>
+                    <span class="text-2xl font-extrabold text-brand-700 dark:text-brand-400"><?= CURRENCY ?><?= fmt_price($total) ?></span>
                 </div>
             </div>
 
@@ -186,5 +294,23 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
         </div>
     </div>
 </div>
+
+<script>
+function cartSyncQty(pid, price) {
+    const qtyEl  = document.getElementById('cart-qty-' + pid);
+    const takaEl = document.getElementById('cart-taka-' + pid);
+    if (!qtyEl || !takaEl) return;
+    const qty  = parseFloat(qtyEl.value) || 0;
+    takaEl.value = Math.ceil(qty * price);
+}
+function cartSyncTaka(pid, price) {
+    const qtyEl  = document.getElementById('cart-qty-' + pid);
+    const takaEl = document.getElementById('cart-taka-' + pid);
+    if (!qtyEl || !takaEl) return;
+    const taka = parseFloat(takaEl.value) || 0;
+    const qty  = price > 0 ? taka / price : 0;
+    qtyEl.value = qty.toFixed(3);
+}
+</script>
 
 <?php require_once dirname(__DIR__) . '/includes/store-footer.php'; ?>

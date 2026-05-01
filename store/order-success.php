@@ -37,7 +37,7 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
             </div>
             <div>
                 <div class="text-[10px] uppercase font-extrabold text-gray-400 tracking-widest mb-1"><?= __('total_amount') ?></div>
-                <div class="font-extrabold text-brand-700 dark:text-brand-400 text-xl tracking-tight"><?= CURRENCY ?><?= number_format($order['total'], 2) ?></div>
+                <div class="font-extrabold text-brand-700 dark:text-brand-400 text-xl tracking-tight"><?= CURRENCY ?><?= fmt_price($order['total']) ?></div>
             </div>
             <div>
                 <div class="text-[10px] uppercase font-extrabold text-gray-400 tracking-widest mb-1"><?= __('est_delivery') ?></div>

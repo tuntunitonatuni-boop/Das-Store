@@ -1,0 +1,42 @@
+name: Build Customer APK
+
+on:
+  push:
+    paths:
+      - 'das_store_customer/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Get Dependencies
+        working-directory: das_store_customer
+        run: flutter pub get
+
+      - name: Build Release APK
+        working-directory: das_store_customer
+        run: flutter build apk --release --no-shrink
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: das-store-customer-apk
+          path: das_store_customer/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30

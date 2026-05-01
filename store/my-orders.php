@@ -90,7 +90,7 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
                 <?= __('placed_on') ?> <?= date('d M, Y', strtotime($o['created_at'])) ?> <?= __('at') ?> <?= date('h:i A', strtotime($o['created_at'])) ?>
             </div>
             <div class="text-xl font-extrabold text-brand-700 dark:text-brand-400">
-                <?= CURRENCY . number_format($o['total'], 2) ?>
+                <?= CURRENCY . fmt_price($o['total']) ?>
             </div>
         </div>
     </div>

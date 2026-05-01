@@ -13,24 +13,35 @@ if (is_logged_in()) {
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
+    // Some mobile keyboards add trailing spaces to passwords
     $password = $_POST['password'] ?? '';
+    if (str_ends_with($password, ' ')) {
+        $password = rtrim($password); 
+    }
 
     if ($username && $password) {
         $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$username]);
         $user = $stmt->fetch();
 
-        if ($user && password_verify($password, $user['password'])) {
-            session_regenerate_id(true);
-            $_SESSION['user_id']   = $user['id'];
-            $_SESSION['user_name'] = $user['name'];
-            $_SESSION['role']      = $user['role'];
-            set_flash('success', 'Welcome back, ' . $user['name'] . '!');
-            header('Location: ' . BASE_URL . 'dashboard.php');
-            exit;
+        if ($user) {
+            if (password_verify($password, $user['password'])) {
+                session_regenerate_id(true);
+                $_SESSION['user_id']   = $user['id'];
+                $_SESSION['user_name'] = $user['name'];
+                $_SESSION['role']      = $user['role'];
+                set_flash('success', 'Welcome back, ' . $user['name'] . '!');
+                header('Location: ' . BASE_URL . 'dashboard.php');
+                exit;
+            } else {
+                $error = 'Incorrect password.';
+            }
+        } else {
+            $error = 'Username not found.';
         }
+    } else {
+        $error = 'Please enter both username and password.';
     }
-    $error = 'Invalid username or password.';
 }
 ?>
 <!DOCTYPE html>

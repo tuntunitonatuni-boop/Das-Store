@@ -70,9 +70,9 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
                 <?= htmlspecialchars($p['name']) ?>
             </a>
             <div class="flex items-end gap-2 mb-3">
-                <span class="text-lg font-extrabold text-gray-900 dark:text-white"><?= CURRENCY ?><?= number_format($p['sale_price'], 2) ?></span>
+                <span class="text-lg font-extrabold text-gray-900 dark:text-white"><?= CURRENCY ?><?= fmt_price($p['sale_price']) ?></span>
                 <?php if ($p['mrp'] > $p['sale_price']): ?>
-                <span class="text-xs text-gray-400 dark:text-gray-500 line-through mb-0.5"><?= CURRENCY ?><?= number_format($p['mrp'], 2) ?></span>
+                <span class="text-xs text-gray-400 dark:text-gray-500 line-through mb-0.5"><?= CURRENCY ?><?= fmt_price($p['mrp']) ?></span>
                 <?php endif; ?>
                 <span class="text-[10px] text-gray-400 dark:text-gray-500 mb-1">/ <?= $p['unit'] ?></span>
             </div>

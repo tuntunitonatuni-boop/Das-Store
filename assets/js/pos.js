@@ -170,11 +170,20 @@ const POS = {
     removeFromCart(id) { delete this.cart[id]; this.saveCart(); this.renderCart(); },
 
     updateQty(id, qty) {
-        qty = parseInt(qty, 10);
-        if (qty <= 0) { this.removeFromCart(id); return; }
+        qty = parseFloat(qty);
+        if (isNaN(qty) || qty <= 0) { this.removeFromCart(id); return; }
         if (qty > (this.cart[id]?.stock ?? 9999)) { this.showAlert(POS_LANG.no_stock || 'Not enough stock', 'error'); return; }
         this.cart[id].qty = qty;
         this.saveCart(); this.renderCart();
+    },
+
+    updateQtyByAmount(id, amount) {
+        amount = parseFloat(amount);
+        if (isNaN(amount) || amount <= 0) { this.removeFromCart(id); return; }
+        let price = this.cart[id].price;
+        if (price <= 0) return;
+        let diffQty = amount / price;
+        this.updateQty(id, diffQty.toFixed(3));
     },
 
     renderCart() {
@@ -188,11 +197,22 @@ const POS = {
                     <td class="py-3 px-3 text-sm font-medium dark:text-gray-200">${this.esc(it.name)}</td>
                     <td class="py-3 px-3 text-sm text-right text-gray-500 dark:text-gray-400">${CURRENCY}${it.price.toFixed(2)}</td>
                     <td class="py-3 px-3">
-                        <input type="number" value="${it.qty}" min="1" max="${it.stock}"
-                                onchange="POS.updateQty(${it.id}, this.value)"
-                                class="w-16 text-center border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm py-1 outline-none focus:border-brand-500">
+                        <div class="flex items-center">
+                            <input type="number" step="any" value="${it.qty}" min="0.001" max="${it.stock}"
+                                    onchange="POS.updateQty(${it.id}, this.value)"
+                                    class="w-20 text-center border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm py-1 outline-none focus:border-brand-500">
+                            <span class="text-[10px] text-gray-400 ml-1">${it.unit}</span>
+                        </div>
                     </td>
-                    <td class="py-3 px-3 text-sm text-right font-bold text-gray-900 dark:text-white">${CURRENCY}${(it.price * it.qty).toFixed(2)}</td>
+                    <td class="py-3 px-3 text-right">
+                        <div class="flex items-center justify-end">
+                            <span class="text-xs text-gray-400 mr-1">${CURRENCY}</span>
+                            <input type="number" step="any" value="${(it.price * it.qty).toFixed(2)}"
+                                   onchange="POS.updateQtyByAmount(${it.id}, this.value)"
+                                   onfocus="this.select()"
+                                   class="w-20 text-right font-bold text-gray-900 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm py-1 outline-none focus:border-brand-500" title="Type amount to auto-calculate quantity">
+                        </div>
+                    </td>
                     <td class="py-3 px-1 text-center">
                         <button onclick="POS.removeFromCart(${it.id})" class="text-red-300 hover:text-red-500 text-xl leading-none transition-colors">×</button>
                     </td>
@@ -200,7 +220,7 @@ const POS = {
 
         const total = items.reduce((s, it) => s + it.price * it.qty, 0);
         if (this.totalEl) this.totalEl.textContent = CURRENCY + total.toFixed(2);
-        if (this.itemCountEl) this.itemCountEl.textContent = items.reduce((s, it) => s + it.qty, 0);
+        if (this.itemCountEl) this.itemCountEl.textContent = items.length;
     },
 
     getTotal() { return Object.values(this.cart).reduce((s, it) => s + it.price * it.qty, 0); },
@@ -259,8 +279,6 @@ CHANGE:      ${CURRENCY}${change.toFixed(2)}
         el.style.display = 'block';
         clearTimeout(this._alertTimer);
         this._alertTimer = setTimeout(() => { el.style.display = 'none'; }, 2500);
-    },
-; }, 2500);
     },
 
     startClock() {

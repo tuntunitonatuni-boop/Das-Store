@@ -119,6 +119,9 @@ $cart_count = array_sum(array_column($_SESSION['cart'] ?? [], 'qty'));
                         </button>
                         <div x-show="open" @click.away="open = false" x-transition class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 py-2 z-50">
                             <a href="<?= BASE_URL ?>store/my-orders.php" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-brand-50 dark:hover:bg-gray-700"><?= __('my_orders') ?></a>
+                            <?php if (function_exists('feature') && feature('customer_wishlist')): ?>
+                            <a href="<?= BASE_URL ?>store/wishlist.php" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-brand-50 dark:hover:bg-gray-700">♥ <?= __('my_wishlist') ?? 'My Wishlist' ?></a>
+                            <?php endif; ?>
                             <div class="border-t border-gray-100 dark:border-gray-700 my-1"></div>
                             <a href="<?= BASE_URL ?>store/logout.php" class="block px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"><?= __('logout') ?></a>
                         </div>
@@ -168,3 +171,4 @@ $cart_count = array_sum(array_column($_SESSION['cart'] ?? [], 'qty'));
 </header>
 
 <main class="max-w-7xl mx-auto px-4 py-6">
+    <?php if (function_exists('render_flash')) render_flash(); ?>

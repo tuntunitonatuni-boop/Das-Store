@@ -4,6 +4,7 @@ require_once dirname(__DIR__) . '/config.php';
 require_once dirname(__DIR__) . '/includes/db.php';
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/includes/flash.php';
+require_once dirname(__DIR__) . '/includes/features.php';
 
 if (!isset($_SESSION['cart']) || empty($_SESSION['cart'])) {
     header('Location: index.php');
@@ -14,10 +15,82 @@ if (!isset($_SESSION['cart']) || empty($_SESSION['cart'])) {
 require_customer_login();
 
 $cart_items = $_SESSION['cart'];
-$total = 0;
-foreach ($cart_items as $item) $total += $item['price'] * $item['qty'];
+$subtotal = 0;
+foreach ($cart_items as $item) $subtotal += $item['price'] * $item['qty'];
 
+// Handle Coupon application
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['apply_coupon'])) {
+        $code = trim($_POST['coupon_code']);
+        $c = $pdo->prepare("SELECT * FROM coupons WHERE code=?");
+        $c->execute([strtoupper($code)]);
+        $c = $c->fetch();
+        
+        if (!$c) {
+            set_flash('error', "দুঃখিত, এই কুপন কোডটি সঠিক নয়। (Invalid coupon)");
+        } elseif ($c['is_active'] != 1) {
+            set_flash('error', "এই কুপনটি বর্তমানে বন্ধ আছে। (Coupon is inactive)");
+        } elseif ($c['expires_at'] && strtotime($c['expires_at']) < strtotime(date('Y-m-d'))) {
+            set_flash('error', "এই কুপনের মেয়াদ শেষ হয়ে গেছে। (Coupon expired)");
+        } elseif ($c['usage_limit'] > 0 && $c['used_count'] >= $c['usage_limit']) {
+            set_flash('error', "এই কুপনটির ব্যবহারের সীমা শেষ হয়ে গেছে। (Limit reached)");
+        } elseif ($subtotal < ($c['min_order'] ?? 0)) {
+            set_flash('error', "এই কুপনটি ব্যবহার করতে হলে অন্তত ৳" . number_format($c['min_order'], 2) . " এর অর্ডার করতে হবে।");
+        } else {
+            $_SESSION['checkout_coupon'] = $c;
+            set_flash('success', "কুপন সফলভাবে যোগ করা হয়েছে! 🎉");
+        }
+        header('Location: checkout.php'); exit;
+    }
+    if (isset($_POST['remove_coupon'])) {
+        unset($_SESSION['checkout_coupon']);
+        header('Location: checkout.php'); exit;
+    }
+}
+
+// Calculate Discounts
+$discount = 0;
+$coupon_id = null;
+if (isset($_SESSION['checkout_coupon'])) {
+    $c = $_SESSION['checkout_coupon'];
+    if ($subtotal < ($c['min_order'] ?? 0)) {
+        unset($_SESSION['checkout_coupon']);
+        set_flash('error', "কার্টের পরিমাণ কমে যাওয়ায় কুপনটি বাতিল করা হয়েছে।");
+    } else {
+        $coupon_id = $c['id'];
+        if ($c['type'] === 'percent') {
+            $discount = $subtotal * ($c['value'] / 100);
+            if ($c['max_discount'] > 0 && $discount > $c['max_discount']) {
+                $discount = $c['max_discount'];
+            }
+        } else {
+            $discount = $c['value'];
+        }
+    }
+}
+
+// Calculate Loyalty Points redemption
+$redeemed_points = 0;
+$points_discount = 0;
+if (is_customer_logged_in() && feature('loyalty_points')) {
+    $cust = $pdo->prepare("SELECT total_points FROM customers WHERE id=?");
+    $cust->execute([$_SESSION['customer_id']]);
+    $pts = $cust->fetchColumn() ?: 0;
+    
+    // Auto-apply points if they want, or maybe we just add a switch. For simplicity let's say they checking a box.
+    if (isset($_POST['redeem_pts']) || isset($_SESSION['redeem_pts'])) {
+        if (isset($_POST['checkout'])) $_SESSION['redeem_pts'] = true;
+        if ($_SESSION['redeem_pts'] ?? false) {
+            $redeem_rate = (float)feature_val('points_redeem_value', 1);
+            $redeemed_points = min($pts, floor(($subtotal - $discount) / $redeem_rate));
+            $points_discount = $redeemed_points * $redeem_rate;
+        }
+    }
+}
+
+$total = max(0, $subtotal - $discount - $points_discount);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['checkout'])) {
     $name    = trim($_POST['name'] ?? '');
     $phone   = trim($_POST['phone'] ?? '');
     $address = trim($_POST['address'] ?? '');
@@ -53,9 +126,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // 2. Create Sale Record (Status = 'pending' for online orders)
             $invoiceNo = 'WEB-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -5));
-            $stmt = $pdo->prepare("INSERT INTO sales (invoice_no, customer_id, subtotal, total, payment_method, status, notes) VALUES (?, ?, ?, ?, ?, 'pending', ?)");
-            $stmt->execute([$invoiceNo, $customer_id, $total, $total, $method, $notes]);
+            $stmt = $pdo->prepare("INSERT INTO sales (invoice_no, customer_id, subtotal, discount, total, payment_method, status, notes, coupon_id) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)");
+            $stmt->execute([$invoiceNo, $customer_id, $subtotal, $discount + $points_discount, $total, $method, $notes, $coupon_id]);
             $saleId = $pdo->lastInsertId();
+
+            if ($coupon_id) {
+                $pdo->prepare("UPDATE coupons SET used_count = used_count + 1 WHERE id=?")->execute([$coupon_id]);
+            }
+            if ($redeemed_points > 0) {
+                $pdo->prepare("INSERT INTO loyalty_points (customer_id, points, type, description) VALUES (?, ?, 'redeem', ?)")->execute([$customer_id, $redeemed_points, "Redeemed for Order #$invoiceNo"]);
+                $pdo->prepare("UPDATE customers SET total_points = GREATEST(0, total_points - ?) WHERE id=?")->execute([$redeemed_points, $customer_id]);
+            }
 
             // 3. Create Sale Items
             foreach ($cart_items as $item) {
@@ -91,6 +172,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->commit();
             $_SESSION['cart'] = []; // Clear cart
+            unset($_SESSION['checkout_coupon']);
+            unset($_SESSION['redeem_pts']);
             $_SESSION['last_order'] = ['id' => $saleId, 'invoice' => $invoiceNo, 'total' => $total, 'name' => $name];
             header('Location: order-success.php');
             exit;
@@ -109,10 +192,13 @@ $store_page_title = 'Checkout - ' . SHOP_NAME;
 // Pre-fill data for logged in customers
 $cust_prefill = ['name' => '', 'phone' => '', 'address' => ''];
 if (is_customer_logged_in()) {
-    $stmt = $pdo->prepare("SELECT name, phone, address FROM customers WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT name, phone, address, total_points FROM customers WHERE id = ?");
     $stmt->execute([$_SESSION['customer_id']]);
     $res = $stmt->fetch();
-    if ($res) $cust_prefill = $res;
+    if ($res) {
+        $cust_prefill = $res;
+        $customer_pts = $res['total_points'] ?? 0;
+    }
 }
 
 require_once dirname(__DIR__) . '/includes/store-header.php';
@@ -123,9 +209,12 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
     <h1 class="text-3xl font-extrabold text-gray-900 dark:text-white"><?= __('secure_checkout') ?></h1>
 </div>
 
-<form method="post" class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-20">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-20">
     <!-- Left: Shipping & Payment -->
     <div class="lg:col-span-2 space-y-6">
+        <form method="post" id="checkout-form">
+            <input type="hidden" name="checkout" value="1">
+            <div class="bg-white dark:bg-gray-800 rounded-3xl p-6 md:p-8 border border-gray-100 dark:border-gray-700 shadow-sm mb-6">
         <div class="bg-white dark:bg-gray-800 rounded-3xl p-6 md:p-8 border border-gray-100 dark:border-gray-700 shadow-sm">
             <h2 class="text-xl font-bold mb-6 flex items-center gap-2 dark:text-white">
                 <span class="bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 w-8 h-8 rounded-full flex items-center justify-center text-sm">1</span>
@@ -180,9 +269,10 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
             
             <div class="mt-6">
                 <label class="form-label dark:text-gray-300"><?= __('order_notes') ?></label>
-                <input type="text" name="notes" class="form-control dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="<?= __('notes_placeholder') ?>">
+                <input type="text" name="notes" class="form-control dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="<?= __('notes_placeholder') ?? 'Delivery instructions...' ?>">
             </div>
         </div>
+        </form>
     </div>
 
     <!-- Right: Order Summary -->
@@ -196,30 +286,68 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
                 <li class="flex justify-between items-start text-xs">
                     <div class="flex-1">
                         <div class="font-bold text-gray-800 dark:text-gray-200"><?= htmlspecialchars($item['name']) ?></div>
-                        <div class="text-gray-400 dark:text-gray-500"><?= $item['qty'] ?> x <?= CURRENCY ?><?= number_format($item['price'], 2) ?></div>
+                        <div class="text-gray-400 dark:text-gray-500"><?= $item['qty'] ?> x <?= CURRENCY ?><?= fmt_price($item['price']) ?></div>
                     </div>
-                    <div class="font-bold text-gray-900 dark:text-white"><?= CURRENCY ?><?= number_format($item['price'] * $item['qty'], 2) ?></div>
+                    <div class="font-bold text-gray-900 dark:text-white"><?= CURRENCY ?><?= fmt_price($item['price'] * $item['qty']) ?></div>
                 </li>
                 <?php endforeach; ?>
             </ul>
 
-            <div class="space-y-4 mb-8 pt-4 border-t border-gray-100 dark:border-gray-700">
+            <div class="space-y-4 mb-6 pt-4 border-t border-gray-100 dark:border-gray-700">
                 <div class="flex justify-between items-center text-sm font-medium text-gray-500 dark:text-gray-400">
-                    <span><?= __('subtotal') ?></span>
-                    <span class="text-gray-900 dark:text-white"><?= CURRENCY ?><?= number_format($total, 2) ?></span>
+                    <span><?= __('subtotal') ?? 'Subtotal' ?></span>
+                    <span class="text-gray-900 dark:text-white"><?= CURRENCY ?><?= fmt_price($subtotal) ?></span>
                 </div>
+                
+                <?php if ($discount > 0): ?>
+                <div class="flex justify-between items-center text-sm font-medium text-red-500">
+                    <span>Discount (<?= htmlspecialchars($_SESSION['checkout_coupon']['code']) ?>)
+                        <form method="post" class="inline ml-1"><button type="submit" name="remove_coupon" class="text-red-400 underline">Remove</button></form>
+                    </span>
+                    <span>- <?= CURRENCY ?><?= number_format($discount, 2) ?></span>
+                </div>
+                <?php endif; ?>
+
+                <?php if ($points_discount > 0): ?>
+                <div class="flex justify-between items-center text-sm font-medium text-emerald-500">
+                    <span>Loyalty Points (-<?= $redeemed_points ?> pts)</span>
+                    <span>- <?= CURRENCY ?><?= number_format($points_discount, 2) ?></span>
+                </div>
+                <?php endif; ?>
+
                 <div class="flex justify-between items-center text-sm font-medium text-gray-500 dark:text-gray-400">
-                    <span><?= __('shipping') ?></span>
-                    <span class="text-emerald-600 dark:text-emerald-400 font-bold uppercase text-[10px]"><?= __('free') ?></span>
+                    <span><?= __('shipping') ?? 'Shipping' ?></span>
+                    <span class="text-emerald-600 dark:text-emerald-400 font-bold uppercase text-[10px]"><?= __('free') ?? 'FREE' ?></span>
                 </div>
+
+                <!-- Coupons Section in Summary -->
+                <?php if (feature('discount_coupons') && !$coupon_id): ?>
+                <div class="pt-2 pb-1">
+                    <form method="post" class="flex gap-2">
+                        <input type="text" name="coupon_code" placeholder="Coupon Code" class="form-control flex-1 py-1.5 px-3 text-sm uppercase dark:bg-gray-700 dark:border-gray-600 dark:text-white rounded-lg border-gray-200" required>
+                        <button type="submit" name="apply_coupon" class="bg-gray-900 hover:bg-gray-800 text-white py-1.5 px-4 text-xs font-bold rounded-lg dark:bg-gray-600">Apply</button>
+                    </form>
+                </div>
+                <?php endif; ?>
                 <div class="flex justify-between items-center pt-4 border-t border-dashed border-gray-200 dark:border-gray-700">
-                    <span class="text-base font-extrabold text-gray-900 dark:text-white"><?= __('payable_amount') ?></span>
-                    <span class="text-2xl font-extrabold text-brand-700 dark:text-brand-400"><?= CURRENCY ?><?= number_format($total, 2) ?></span>
+                    <span class="text-base font-extrabold text-gray-900 dark:text-white"><?= __('payable_amount') ?? 'Total' ?></span>
+                    <span class="text-2xl font-extrabold text-brand-700 dark:text-brand-400"><?= CURRENCY ?><?= fmt_price($total) ?></span>
                 </div>
             </div>
 
-            <button type="submit" class="w-full bg-brand-600 text-white text-center font-extrabold py-4 rounded-2xl text-lg hover:bg-brand-700 dark:hover:bg-brand-500 active:scale-95 transition-all shadow-2xl shadow-brand-100 dark:shadow-none">
-                <?= __('place_order') ?> ➔
+
+
+            <!-- Loyalty Points Checkbox -->
+            <?php if (feature('loyalty_points') && ($customer_pts ?? 0) > 0): ?>
+            <div class="mb-6 p-4 bg-brand-50 dark:bg-gray-700/50 rounded-xl border border-brand-100 dark:border-gray-600 text-sm">
+                <input type="checkbox" form="checkout-form" name="redeem_pts" id="redeem_pts" value="1" <?= isset($_SESSION['redeem_pts']) ? 'checked' : '' ?> class="mr-2 accent-brand-600" onchange="this.form.submit()">
+                <label for="redeem_pts" class="font-bold cursor-pointer dark:text-white">Use <?= $customer_pts ?> Loyalty Points</label>
+                <div class="text-[10px] text-gray-500 mt-1">Saves you up to <?= CURRENCY ?><?= number_format($customer_pts * (float)feature_val('points_redeem_value',1), 2) ?></div>
+            </div>
+            <?php endif; ?>
+
+            <button type="button" onclick="document.getElementById('checkout-form').submit()" class="w-full bg-brand-600 text-white text-center font-extrabold py-4 rounded-2xl text-lg hover:bg-brand-700 dark:hover:bg-brand-500 active:scale-95 transition-all shadow-2xl shadow-brand-100 dark:shadow-none">
+                <?= __('place_order') ?? 'Place Order' ?> ➔
             </button>
             <p class="text-[10px] text-center text-gray-400 dark:text-gray-500 font-bold uppercase mt-4"><?= __('terms_agree') ?></p>
         </div>
@@ -232,6 +360,6 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
             </div>
         </div>
     </div>
-</form>
+</div>
 
 <?php require_once dirname(__DIR__) . '/includes/store-footer.php'; ?>

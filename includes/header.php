@@ -6,7 +6,6 @@ $user = current_user();
 $page_title = $page_title ?? SHOP_NAME;
 ?>
 <!DOCTYPE html>
-<!DOCTYPE html>
 <html lang="<?= get_current_lang() ?>" class="h-full" x-data="{ 
     darkMode: localStorage.getItem('theme') === 'dark',
     toggleTheme() {
@@ -60,7 +59,7 @@ $page_title = $page_title ?? SHOP_NAME;
         .dark .text-gray-700 { color: #d1d5db; }
         .dark .text-gray-800 { color: #f3f4f6; }
         .dark .border-gray-100 { border-color: #374151; }
-        .dark .hover\:\bg-gray-50:hover { background-color: #374151; }
+        .dark .hover\:bg-gray-50:hover { background-color: #374151; }
     </style>
 </head>
 <body class="bg-gray-50 font-sans h-full transition-colors duration-300" x-data="{ sidebarOpen: window.innerWidth >= 1024 }">

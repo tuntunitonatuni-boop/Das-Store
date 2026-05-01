@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS `categories` (
   `name`       VARCHAR(100) NOT NULL,
   `slug`       VARCHAR(120) NOT NULL UNIQUE,
   `icon`       VARCHAR(10)  DEFAULT '🏷️',
+  `image`      VARCHAR(255) NULL,
   `is_active`  TINYINT(1)   DEFAULT 1,
   `sort_order` SMALLINT     DEFAULT 0,
   `created_at` TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
@@ -131,6 +132,7 @@ CREATE TABLE IF NOT EXISTS `sales` (
   `change_given`   DECIMAL(10,2) DEFAULT 0,
   `payment_method` ENUM('cash','credit','card','mobile') DEFAULT 'cash',
   `status`         ENUM('pending', 'packaging', 'delivering', 'completed', 'cancelled', 'refunded', 'partial') DEFAULT 'completed',
+  `shipping_address` TEXT NULL,
   `notes`          TEXT,
   `created_at`     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON DELETE SET NULL,

@@ -6,7 +6,7 @@ require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/includes/flash.php';
 
 $search = trim($_GET['q'] ?? '');
-$where = "WHERE p.is_active = 1 AND (i.display_qty + i.warehouse_qty) > 0";
+$where = "WHERE p.is_active = 1 AND p.is_published = 1 AND (i.display_qty + i.warehouse_qty) > 0";
 $params = [];
 if ($search) {
     $where .= " AND (p.name LIKE ? OR p.description LIKE ?)";
@@ -76,7 +76,9 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
                 <div class="w-full h-full flex items-center justify-center text-4xl bg-brand-50/20 dark:bg-brand-900/10">📦</div>
                 <?php endif; ?>
 
-                <?php if ($p['mrp'] > $p['sale_price']): ?>
+                <?php if ($p['badge']): ?>
+                <span class="absolute top-2 left-2 px-2 py-1 rounded-md text-[9px] font-black uppercase text-white shadow-sm" style="background: var(--brand-500);"><?= $p['badge'] ?></span>
+                <?php elseif ($p['mrp'] > $p['sale_price']): ?>
                 <span class="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider"><?= __('save') ?> <?= round((($p['mrp'] - $p['sale_price'])/$p['mrp'])*100) ?>%</span>
                 <?php endif; ?>
             </a>
@@ -86,12 +88,12 @@ require_once dirname(__DIR__) . '/includes/store-header.php';
                     <?= $p['category_icon'] ?> <?= htmlspecialchars($p['category_name']) ?>
                 </a>
                 <a href="product.php?id=<?= $p['id'] ?>" class="text-sm font-bold text-gray-900 dark:text-gray-100 line-clamp-2 leading-tight group-hover:text-brand-700 dark:group-hover:text-brand-400 transition-colors mb-2">
-                    <?= htmlspecialchars($p['name']) ?>
+                    <?= htmlspecialchars(($_SESSION['lang']??'en')==='bn' && $p['name_bn'] ? $p['name_bn'] : $p['name']) ?>
                 </a>
                 <div class="flex items-end gap-2 mb-3">
-                    <span class="text-lg font-extrabold text-gray-900 dark:text-gray-100"><?= CURRENCY ?><?= number_format($p['sale_price'], 2) ?></span>
+                    <span class="text-lg font-extrabold text-gray-900 dark:text-gray-100"><?= CURRENCY ?><?= fmt_price($p['sale_price']) ?></span>
                     <?php if ($p['mrp'] > $p['sale_price']): ?>
-                    <span class="text-xs text-gray-400 dark:text-gray-500 line-through mb-0.5"><?= CURRENCY ?><?= number_format($p['mrp'], 2) ?></span>
+                    <span class="text-xs text-gray-400 dark:text-gray-500 line-through mb-0.5"><?= CURRENCY ?><?= fmt_price($p['mrp']) ?></span>
                     <?php endif; ?>
                     <span class="text-[10px] text-gray-400 dark:text-gray-500 mb-1">/ <?= $p['unit'] ?></span>
                 </div>
